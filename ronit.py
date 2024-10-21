@@ -3,12 +3,20 @@ from telegram import Update, Bot
 from telegram.ext import Updater, CommandHandler, CallbackContext
 from dotenv import load_dotenv
 
-# Load environment variables from .env file
-load_dotenv()
+# Load environment variables from ronit.env file
+load_dotenv("ronit.env")
 
-# Environment variables (replace these with actual values or keep them in a .env file)
-TELEGRAM_BOT_TOKEN = os.getenv("7600186168:AAFZFLUW36PIglUhDAq6gUdARUzbEZdluQ8")
-BOT_ADMIN_ID = int(os.getenv("7246521618"))  # The ID of the bot's admin (your Telegram user ID)
+# Load environment variables
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+BOT_ADMIN_ID = os.getenv("BOT_ADMIN_ID")
+
+# Check if BOT_ADMIN_ID is set and convert it to integer if it exists
+if BOT_ADMIN_ID:
+    BOT_ADMIN_ID = int(BOT_ADMIN_ID)  # Ensure it's an integer
+
+# Check if TELEGRAM_BOT_TOKEN is set, handle it gracefully if it's missing
+if not TELEGRAM_BOT_TOKEN:
+    raise ValueError("The TELEGRAM_BOT_TOKEN environment variable is missing!")
 
 # Initialize the bot
 bot = Bot(token=TELEGRAM_BOT_TOKEN)
@@ -26,7 +34,7 @@ def help_command(update: Update, context: CallbackContext) -> None:
     Available Commands:
     /start - Start the bot
     /help - Display this help message
-    /add <token> - Add a new GitHub token
+    /add <token> - Add a new GitHub token (public command)
     /send <message> - Send a message to all users (admin only)
     
     Bot created by @RONIT_IN.
@@ -44,16 +52,16 @@ def add_github_token(update: Update, context: CallbackContext) -> None:
         update.message.reply_text("Please provide a GitHub token. Usage: /add <token>")
 
 def send_message(update: Update, context: CallbackContext) -> None:
-    """Handle the /send_message command (only admin can use this)."""
+    """Handle the /send command (only admin can use this)."""
     user_id = update.message.from_user.id
     
-    if user_id == BOT_ADMIN_ID:
+    if BOT_ADMIN_ID and user_id == BOT_ADMIN_ID:
         if context.args:
             message_to_send = " ".join(context.args)
             update.message.reply_text(f"Message sent to all users: {message_to_send}")
             # In a real-world scenario, you would broadcast the message to all bot users.
         else:
-            update.message.reply_text("Please provide a message to send. Usage: /send_message <message>")
+            update.message.reply_text("Please provide a message to send. Usage: /send <message>")
     else:
         update.message.reply_text("You are not authorized to use this command.")
 
@@ -68,8 +76,8 @@ def main():
     # Register command handlers
     dp.add_handler(CommandHandler("start", start))
     dp.add_handler(CommandHandler("help", help_command))
-    dp.add_handler(CommandHandler("add", add_github_token))  # Updated command to /add
-    dp.add_handler(CommandHandler("send", send_message))
+    dp.add_handler(CommandHandler("add", add_github_token))  # Command for adding GitHub token
+    dp.add_handler(CommandHandler("send", send_message))  # Renamed /send_message to /send
 
     # Start the Bot
     updater.start_polling()

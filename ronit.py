@@ -7,8 +7,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Environment variables (replace these with actual values or keep them in a .env file)
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-BOT_ADMIN_ID = int(os.getenv("BOT_ADMIN_ID"))  # The ID of the bot's admin (your Telegram user ID)
+TELEGRAM_BOT_TOKEN = os.getenv("7600186168:AAFZFLUW36PIglUhDAq6gUdARUzbEZdluQ8")
+BOT_ADMIN_ID = int(os.getenv("7246521618"))  # The ID of the bot's admin (your Telegram user ID)
 
 # Initialize the bot
 bot = Bot(token=TELEGRAM_BOT_TOKEN)

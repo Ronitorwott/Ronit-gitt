@@ -1,6 +1,7 @@
 import os
-from telegram import Update, Bot
-from telegram.ext import Updater, CommandHandler, CallbackContext
+import requests
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Updater, CommandHandler, CallbackQueryHandler, CallbackContext
 from dotenv import load_dotenv
 
 # Load environment variables from ronit.env file
@@ -21,8 +22,8 @@ if not TELEGRAM_BOT_TOKEN:
 # Initialize the bot
 bot = Bot(token=TELEGRAM_BOT_TOKEN)
 
-# Store a single GitHub token (can be updated by public command)
-github_token = None
+# Dictionary to store GitHub tokens per user
+user_github_tokens = {}
 
 def start(update: Update, context: CallbackContext) -> None:
     """Handle the /start command."""
@@ -34,7 +35,10 @@ def help_command(update: Update, context: CallbackContext) -> None:
     Available Commands:
     /start - Start the bot
     /help - Display this help message
-    /add <token> - Add a new GitHub token (public command)
+    /add <token> - Add your GitHub token to control your Codespaces
+    /list_codespaces - List your active GitHub Codespaces with clickable buttons to copy IDs
+    /start_codespace <id> - Start a GitHub Codespace by its ID
+    /stop_codespace <id> - Stop a GitHub Codespace by its ID
     /send <message> - Send a message to all users (admin only)
     
     Bot created by @RONIT_IN.
@@ -42,19 +46,115 @@ def help_command(update: Update, context: CallbackContext) -> None:
     update.message.reply_text(help_message)
 
 def add_github_token(update: Update, context: CallbackContext) -> None:
-    """Handle the /add command to add a GitHub token."""
-    global github_token
-    
+    """Handle the /add command to add a GitHub token for a user."""
+    user_id = update.message.from_user.id
+
     if context.args:
         github_token = context.args[0]
-        update.message.reply_text(f"GitHub token added: {github_token}")
+        user_github_tokens[user_id] = github_token
+        update.message.reply_text(f"GitHub token added for user {update.message.chat.first_name}.")
     else:
         update.message.reply_text("Please provide a GitHub token. Usage: /add <token>")
+
+def list_codespaces(update: Update, context: CallbackContext) -> None:
+    """List the user's GitHub Codespaces with clickable buttons to copy IDs."""
+    user_id = update.message.from_user.id
+    github_token = user_github_tokens.get(user_id)
+
+    if not github_token:
+        update.message.reply_text("Please add your GitHub token first using /add <token>.")
+        return
+
+    headers = {
+        'Authorization': f'token {github_token}',
+        'Accept': 'application/vnd.github.v3+json'
+    }
+
+    response = requests.get("https://api.github.com/user/codespaces", headers=headers)
+
+    if response.status_code == 200:
+        codespaces = response.json()
+        if codespaces['codespaces']:
+            keyboard = []
+            for cs in codespaces['codespaces']:
+                # Create a button for each Codespace with its ID
+                keyboard.append([InlineKeyboardButton(f"Copy ID: {cs['id']}", callback_data=f"copy:{cs['id']}")])
+            
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            update.message.reply_text("Your Codespaces:", reply_markup=reply_markup)
+        else:
+            update.message.reply_text("You have no active Codespaces.")
+    else:
+        update.message.reply_text("Failed to fetch Codespaces. Please check your GitHub token.")
+
+def button_handler(update: Update, context: CallbackContext) -> None:
+    """Handle the inline button clicks."""
+    query = update.callback_query
+    query.answer()
+
+    # Get the callback data (e.g., 'copy:<codespace_id>')
+    data = query.data
+    if data.startswith("copy:"):
+        codespace_id = data.split(":")[1]
+        # Reply with the Codespace ID, user can copy it manually
+        query.edit_message_text(text=f"Copied Codespace ID: `{codespace_id}`", parse_mode='Markdown')
+
+def start_codespace(update: Update, context: CallbackContext) -> None:
+    """Start a GitHub Codespace by its ID."""
+    user_id = update.message.from_user.id
+    github_token = user_github_tokens.get(user_id)
+
+    if not github_token:
+        update.message.reply_text("Please add your GitHub token first using /add <token>.")
+        return
+
+    if not context.args:
+        update.message.reply_text("Please provide the Codespace ID. Usage: /start_codespace <id>")
+        return
+
+    codespace_id = context.args[0]
+    headers = {
+        'Authorization': f'token {github_token}',
+        'Accept': 'application/vnd.github.v3+json'
+    }
+
+    response = requests.post(f"https://api.github.com/user/codespaces/{codespace_id}/start", headers=headers)
+
+    if response.status_code == 202:
+        update.message.reply_text(f"Codespace with ID {codespace_id} is starting.")
+    else:
+        update.message.reply_text("Failed to start the Codespace. Please check the ID and your token.")
+
+def stop_codespace(update: Update, context: CallbackContext) -> None:
+    """Stop a GitHub Codespace by its ID."""
+    user_id = update.message.from_user.id
+    github_token = user_github_tokens.get(user_id)
+
+    if not github_token:
+        update.message.reply_text("Please add your GitHub token first using /add <token>.")
+        return
+
+    if not context.args:
+        update.message.reply_text("Please provide the Codespace ID. Usage: /stop_codespace <id>")
+        return
+
+    codespace_id = context.args[0]
+    headers = {
+        'Authorization': f'token {github_token}',
+        'Accept': 'application/vnd.github.v3+json'
+    }
+
+    response = requests.post(f"https://api.github.com/user/codespaces/{codespace_id}/stop", headers=headers)
+
+    if response.status_code == 202:
+        update.message.reply_text(f"Codespace with ID {codespace_id} is stopping.")
+    else:
+        update.message.reply_text("Failed to stop the Codespace. Please check the ID and your token.")
 
 def send_message(update: Update, context: CallbackContext) -> None:
     """Handle the /send command (only admin can use this)."""
     user_id = update.message.from_user.id
-    
+
     if BOT_ADMIN_ID and user_id == BOT_ADMIN_ID:
         if context.args:
             message_to_send = " ".join(context.args)
@@ -76,8 +176,14 @@ def main():
     # Register command handlers
     dp.add_handler(CommandHandler("start", start))
     dp.add_handler(CommandHandler("help", help_command))
-    dp.add_handler(CommandHandler("add", add_github_token))  # Command for adding GitHub token
-    dp.add_handler(CommandHandler("send", send_message))  # Renamed /send_message to /send
+    dp.add_handler(CommandHandler("add", add_github_token))  # Add GitHub token
+    dp.add_handler(CommandHandler("list_codespaces", list_codespaces))  # List GitHub Codespaces
+    dp.add_handler(CommandHandler("start_codespace", start_codespace))  # Start a Codespace
+    dp.add_handler(CommandHandler("stop_codespace", stop_codespace))  # Stop a Codespace
+    dp.add_handler(CommandHandler("send", send_message))  # Admin send message
+
+    # Register button callback handler
+    dp.add_handler(CallbackQueryHandler(button_handler))
 
     # Start the Bot
     updater.start_polling()
